@@ -9,41 +9,141 @@
 set -e # Exit immediately if a command exits with a non-zero status.
 
 # Check the operating system
-if [ -f /etc/os-release ]; then
-    os_type=$(grep "^ID=" /etc/os-release | cut -d'=' -f2 | tr -d '"')
-    os_version=$(grep "^VERSION_ID=" /etc/os-release | cut -d'=' -f2 | tr -d '"')
+#!/bin/bash
 
-    echo "Detected OS: $os_type $os_version"
+# Common packages across all distributions
+COMMON_PACKAGES="gcc make nano git net-tools zip psmisc curl"
+ARCH_PACKAGES="jq iptables ipcalc"
 
-    # --- Ubuntu / Debian ---
-    if [ "$os_type" == "ubuntu" ] || [ "$os_type" == "debian" ]; then
-        echo "Updating package list and installing dependencies for $os_type..."
-        apt-get update -y
-        apt-get install -y lsb-release ifupdown gcc make nano git libc6-dev net-tools libarchive-tools zip psmisc jq shc iptables curl ipcalc
-
-    # --- CentOS 7 ---
-    elif [ "$os_type" == "centos" ] && [ "${os_version%%.*}" == "7" ]; then
-        echo "Updating package list and installing dependencies for CentOS 7..."
-        yum update -y
-        yum install -y epel-release
-        yum install -y jq redhat-lsb-core network-scripts gcc make nano git net-tools bsdtar zip psmisc shc wget iptables iptables-services curl ipcalc
-
-    # --- AlmaLinux / Rocky Linux ---
-    elif [ "$os_type" == "almalinux" ] || [ "$os_type" == "rocky" ]; then
-        echo "Updating package list and installing dependencies for $os_type..."
-        dnf update -y
-        dnf install -y epel-release
-        dnf install -y jq redhat-lsb-core network-scripts gcc make nano git net-tools bsdtar zip psmisc shc wget iptables curl ipcalc
-
+# Package manager detection function
+detect_package_manager() {
+    if command -v apt-get > /dev/null 2>&1; then
+        echo "apt"
+    elif command -v dnf > /dev/null 2>&1; then
+        echo "dnf"
+    elif command -v yum > /dev/null 2>&1; then
+        echo "yum"
+    elif command -v pacman > /dev/null 2>&1; then
+        echo "pacman"
+    elif command -v zypper > /dev/null 2>&1; then
+        echo "zypper"
+    elif command -v apk > /dev/null 2>&1; then
+        echo "apk"
     else
-        echo "Unsupported operating system: $os_type"
-        echo "Please install the following packages manually: gcc, make, git, jq, shc, net-tools, curl, ipcalc"
-        exit 1
+        echo "unknown"
     fi
+}
+
+# OS detection function
+detect_os_info() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS_ID="$ID"
+        OS_VERSION="$VERSION_ID"
+        OS_LIKE="$ID_LIKE"
+    elif [ -f /etc/redhat-release ]; then
+        OS_ID="rhel"
+        OS_VERSION=$(cat /etc/redhat-release | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    elif [ -f /etc/debian_version ]; then
+        OS_ID="debian"
+        OS_VERSION=$(cat /etc/debian_version)
+    else
+        OS_ID="unknown"
+        OS_VERSION="unknown"
+    fi
+}
+
+# Package installation function
+install_packages() {
+    local pkg_manager="$1"
+    local packages="$2"
+    
+    case "$pkg_manager" in
+        "apt")
+            echo "Using APT package manager..."
+            apt-get update -y
+            apt-get install -y $packages lsb-release ifupdown libc6-dev libarchive-tools shc
+            ;;
+        "dnf")
+            echo "Using DNF package manager..."
+            dnf update -y
+            dnf install -y epel-release || true
+            dnf install -y $packages redhat-lsb-core network-scripts bsdtar shc wget
+            ;;
+        "yum")
+            echo "Using YUM package manager..."
+            yum update -y
+            yum install -y epel-release || true
+            yum install -y $packages redhat-lsb-core network-scripts bsdtar shc wget iptables-services
+            ;;
+        "pacman")
+            echo "Using Pacman package manager..."
+            pacman -Syu --noconfirm
+            pacman -S --noconfirm $packages base-devel wget archlinux-lsb-release
+            ;;
+        "zypper")
+            echo "Using Zypper package manager..."
+            zypper refresh
+            zypper install -y $packages lsb-release wget
+            ;;
+        "apk")
+            echo "Using APK package manager..."
+            apk update
+            apk add $packages build-base wget
+            ;;
+        *)
+            echo "Unsupported package manager. Please install packages manually:"
+            echo "$COMMON_PACKAGES $ARCH_PACKAGES"
+            return 1
+            ;;
+    esac
+}
+
+# Main execution
+echo "Detecting operating system and package manager..."
+
+detect_os_info
+PKG_MANAGER=$(detect_package_manager)
+
+echo "Detected OS: $OS_ID $OS_VERSION"
+echo "Package Manager: $PKG_MANAGER"
+
+# Handle special cases
+case "$OS_ID" in
+    "ubuntu"|"debian"|"linuxmint"|"pop")
+        PACKAGES="$COMMON_PACKAGES $ARCH_PACKAGES"
+        ;;
+    "centos"|"rhel"|"almalinux"|"rocky"|"fedora"|"opensuse"*)
+        PACKAGES="$COMMON_PACKAGES $ARCH_PACKAGES"
+        ;;
+    "arch"|"manjaro"|"endeavouros")
+        PACKAGES="$COMMON_PACKAGES jq iptables ipcalc"
+        ;;
+    "alpine")
+        PACKAGES="$COMMON_PACKAGES jq iptables"
+        ;;
+    *)
+        # Fallback based on ID_LIKE
+        if [[ "$OS_LIKE" == *"debian"* ]]; then
+            PACKAGES="$COMMON_PACKAGES $ARCH_PACKAGES"
+            PKG_MANAGER="apt"
+        elif [[ "$OS_LIKE" == *"rhel"* ]] || [[ "$OS_LIKE" == *"fedora"* ]]; then
+            PACKAGES="$COMMON_PACKAGES $ARCH_PACKAGES"
+        else
+            echo "Warning: Unsupported OS detected. Attempting with detected package manager..."
+            PACKAGES="$COMMON_PACKAGES $ARCH_PACKAGES"
+        fi
+        ;;
+esac
+
+if install_packages "$PKG_MANAGER" "$PACKAGES"; then
+    echo "Dependencies installed successfully!"
 else
-    echo "Could not detect operating system. Unable to install dependencies."
+    echo "Failed to install dependencies. Please install manually:"
+    echo "$COMMON_PACKAGES $ARCH_PACKAGES"
     exit 1
 fi
+
 
 # --- Configuration ---
 AGENT_DOWNLOAD_URL="https://raw.githubusercontent.com/caotranquochoai/VLAN-agent/refs/heads/main/client-agent.zip"
