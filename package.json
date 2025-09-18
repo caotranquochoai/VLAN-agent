@@ -1,0 +1,22 @@
+{
+  "name": "proxy-client-agent",
+  "version": "1.0.0",
+  "description": "Client agent for executing proxy creation scripts.",
+  "main": "dist-agent/agent.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && node dist-agent/agent.js",
+    "dev": "tsx watch agent.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/dotenv": "^8.2.0",
+    "@types/node": "^20.14.12",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.5.3"
+  }
+}
