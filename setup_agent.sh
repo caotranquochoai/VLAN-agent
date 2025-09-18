@@ -87,7 +87,7 @@ npm install
 # --- 6. Register Agent and Create .env File ---
 log_info "Registering agent with the server..."
 # Hardcode the server URL as requested
-SERVER_URL_INPUT="http://192.168.1.2:8081"
+SERVER_URL_INPUT="https://svlan.vivucloud.com"
 log_info "Using hardcoded server URL: $SERVER_URL_INPUT"
 
 # Sanitize URL to ensure it's just the base
