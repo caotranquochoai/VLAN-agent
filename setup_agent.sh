@@ -8,6 +8,43 @@
 
 set -e # Exit immediately if a command exits with a non-zero status.
 
+# Check the operating system
+if [ -f /etc/os-release ]; then
+    os_type=$(grep "^ID=" /etc/os-release | cut -d'=' -f2 | tr -d '"')
+    os_version=$(grep "^VERSION_ID=" /etc/os-release | cut -d'=' -f2 | tr -d '"')
+
+    echo "Detected OS: $os_type $os_version"
+
+    # --- Ubuntu / Debian ---
+    if [ "$os_type" == "ubuntu" ] || [ "$os_type" == "debian" ]; then
+        echo "Updating package list and installing dependencies for $os_type..."
+        apt-get update -y
+        apt-get install -y lsb-release ifupdown gcc make nano git libc6-dev net-tools libarchive-tools zip psmisc jq shc iptables curl ipcalc
+
+    # --- CentOS 7 ---
+    elif [ "$os_type" == "centos" ] && [ "${os_version%%.*}" == "7" ]; then
+        echo "Updating package list and installing dependencies for CentOS 7..."
+        yum update -y
+        yum install -y epel-release
+        yum install -y jq redhat-lsb-core network-scripts gcc make nano git net-tools bsdtar zip psmisc shc wget iptables iptables-services curl ipcalc
+
+    # --- AlmaLinux / Rocky Linux ---
+    elif [ "$os_type" == "almalinux" ] || [ "$os_type" == "rocky" ]; then
+        echo "Updating package list and installing dependencies for $os_type..."
+        dnf update -y
+        dnf install -y epel-release
+        dnf install -y jq redhat-lsb-core network-scripts gcc make nano git net-tools bsdtar zip psmisc shc wget iptables curl ipcalc
+
+    else
+        echo "Unsupported operating system: $os_type"
+        echo "Please install the following packages manually: gcc, make, git, jq, shc, net-tools, curl, ipcalc"
+        exit 1
+    fi
+else
+    echo "Could not detect operating system. Unable to install dependencies."
+    exit 1
+fi
+
 # --- Configuration ---
 AGENT_DOWNLOAD_URL="https://raw.githubusercontent.com/caotranquochoai/VLAN-agent/refs/heads/main/client-agent.zip"
 INSTALL_DIR="/opt/vivucloud-agent"
