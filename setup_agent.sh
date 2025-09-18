@@ -9,29 +9,127 @@
 set -e # Exit immediately if a command exits with a non-zero status.
 
 # Check the operating system
-#!/bin/bash
 
 # Common packages across all distributions
-COMMON_PACKAGES="gcc make nano git net-tools zip psmisc curl"
-ARCH_PACKAGES="jq iptables ipcalc"
+COMMON_PACKAGES="gcc make nano git net-tools zip psmisc curl jq iptables ipcalc"
 
-# Package manager detection function
-detect_package_manager() {
-    if command -v apt-get > /dev/null 2>&1; then
-        echo "apt"
-    elif command -v dnf > /dev/null 2>&1; then
-        echo "dnf"
-    elif command -v yum > /dev/null 2>&1; then
-        echo "yum"
-    elif command -v pacman > /dev/null 2>&1; then
-        echo "pacman"
-    elif command -v zypper > /dev/null 2>&1; then
-        echo "zypper"
-    elif command -v apk > /dev/null 2>&1; then
-        echo "apk"
-    else
-        echo "unknown"
-    fi
+# Function to install packages with error handling
+install_package_safe() {
+    local pkg_manager="$1"
+    local package="$2"
+    
+    case "$pkg_manager" in
+        "dnf"|"yum")
+            if $pkg_manager install -y "$package" 2>/dev/null; then
+                echo "✓ Installed: $package"
+                return 0
+            else
+                echo "⚠ Skipped unavailable package: $package"
+                return 1
+            fi
+            ;;
+        "apt")
+            if apt-get install -y "$package" 2>/dev/null; then
+                echo "✓ Installed: $package"
+                return 0
+            else
+                echo "⚠ Skipped unavailable package: $package"
+                return 1
+            fi
+            ;;
+        *)
+            echo "⚠ Unknown package manager for: $package"
+            return 1
+            ;;
+    esac
+}
+
+# Enhanced package installation function
+install_packages_enhanced() {
+    local pkg_manager="$1"
+    local os_id="$2"
+    local os_version="$3"
+    
+    case "$pkg_manager" in
+        "apt")
+            echo "Using APT package manager..."
+            apt-get update -y
+            
+            # Essential packages
+            for pkg in $COMMON_PACKAGES; do
+                install_package_safe "apt" "$pkg"
+            done
+            
+            # Debian/Ubuntu specific
+            install_package_safe "apt" "lsb-release"
+            install_package_safe "apt" "ifupdown"
+            install_package_safe "apt" "libc6-dev"
+            install_package_safe "apt" "libarchive-tools"
+            install_package_safe "apt" "shc"
+            ;;
+            
+        "dnf"|"yum")
+            echo "Using $pkg_manager package manager..."
+            $pkg_manager update -y
+            
+            # Install EPEL repository first
+            $pkg_manager install -y epel-release 2>/dev/null || echo "EPEL already installed or not available"
+            
+            # Essential packages
+            for pkg in $COMMON_PACKAGES; do
+                install_package_safe "$pkg_manager" "$pkg"
+            done
+            
+            # RHEL family specific packages with version checks
+            if [[ "$os_version" =~ ^[78] ]]; then
+                # For CentOS 7/8, RHEL 7/8
+                install_package_safe "$pkg_manager" "redhat-lsb-core"
+                install_package_safe "$pkg_manager" "network-scripts"
+            else
+                # For newer versions (9+), use alternatives
+                install_package_safe "$pkg_manager" "redhat-lsb-core" || {
+                    echo "Installing alternative to redhat-lsb-core..."
+                    install_package_safe "$pkg_manager" "util-linux"
+                }
+                
+                # network-scripts is deprecated in newer versions
+                echo "Note: network-scripts is deprecated in newer RHEL versions"
+                install_package_safe "$pkg_manager" "NetworkManager"
+            fi
+            
+            install_package_safe "$pkg_manager" "bsdtar"
+            install_package_safe "$pkg_manager" "shc"
+            install_package_safe "$pkg_manager" "wget"
+            
+            # For CentOS 7 only
+            if [[ "$os_id" == "centos" && "$os_version" =~ ^7 ]]; then
+                install_package_safe "$pkg_manager" "iptables-services"
+            fi
+            ;;
+            
+        "pacman")
+            echo "Using Pacman package manager..."
+            pacman -Syu --noconfirm
+            
+            for pkg in $COMMON_PACKAGES; do
+                install_package_safe "pacman" "$pkg"
+            done
+            
+            install_package_safe "pacman" "base-devel"
+            install_package_safe "pacman" "wget"
+            ;;
+            
+        *)
+            echo "Unsupported package manager: $pkg_manager"
+            echo "Please install these packages manually:"
+            echo "$COMMON_PACKAGES"
+            return 1
+            ;;
+    esac
+    
+    echo ""
+    echo "Package installation completed!"
+    echo "Some optional packages may have been skipped if unavailable."
 }
 
 # OS detection function
@@ -41,62 +139,26 @@ detect_os_info() {
         OS_ID="$ID"
         OS_VERSION="$VERSION_ID"
         OS_LIKE="$ID_LIKE"
-    elif [ -f /etc/redhat-release ]; then
-        OS_ID="rhel"
-        OS_VERSION=$(cat /etc/redhat-release | grep -oE '[0-9]+\.[0-9]+' | head -1)
-    elif [ -f /etc/debian_version ]; then
-        OS_ID="debian"
-        OS_VERSION=$(cat /etc/debian_version)
     else
         OS_ID="unknown"
         OS_VERSION="unknown"
+        OS_LIKE=""
     fi
 }
 
-# Package installation function
-install_packages() {
-    local pkg_manager="$1"
-    local packages="$2"
-    
-    case "$pkg_manager" in
-        "apt")
-            echo "Using APT package manager..."
-            apt-get update -y
-            apt-get install -y $packages lsb-release ifupdown libc6-dev libarchive-tools shc
-            ;;
-        "dnf")
-            echo "Using DNF package manager..."
-            dnf update -y
-            dnf install -y epel-release || true
-            dnf install -y $packages redhat-lsb-core network-scripts bsdtar shc wget
-            ;;
-        "yum")
-            echo "Using YUM package manager..."
-            yum update -y
-            yum install -y epel-release || true
-            yum install -y $packages redhat-lsb-core network-scripts bsdtar shc wget iptables-services
-            ;;
-        "pacman")
-            echo "Using Pacman package manager..."
-            pacman -Syu --noconfirm
-            pacman -S --noconfirm $packages base-devel wget archlinux-lsb-release
-            ;;
-        "zypper")
-            echo "Using Zypper package manager..."
-            zypper refresh
-            zypper install -y $packages lsb-release wget
-            ;;
-        "apk")
-            echo "Using APK package manager..."
-            apk update
-            apk add $packages build-base wget
-            ;;
-        *)
-            echo "Unsupported package manager. Please install packages manually:"
-            echo "$COMMON_PACKAGES $ARCH_PACKAGES"
-            return 1
-            ;;
-    esac
+# Package manager detection
+detect_package_manager() {
+    if command -v dnf > /dev/null 2>&1; then
+        echo "dnf"
+    elif command -v yum > /dev/null 2>&1; then
+        echo "yum"
+    elif command -v apt-get > /dev/null 2>&1; then
+        echo "apt"
+    elif command -v pacman > /dev/null 2>&1; then
+        echo "pacman"
+    else
+        echo "unknown"
+    fi
 }
 
 # Main execution
@@ -107,42 +169,30 @@ PKG_MANAGER=$(detect_package_manager)
 
 echo "Detected OS: $OS_ID $OS_VERSION"
 echo "Package Manager: $PKG_MANAGER"
+echo ""
 
-# Handle special cases
-case "$OS_ID" in
-    "ubuntu"|"debian"|"linuxmint"|"pop")
-        PACKAGES="$COMMON_PACKAGES $ARCH_PACKAGES"
-        ;;
-    "centos"|"rhel"|"almalinux"|"rocky"|"fedora"|"opensuse"*)
-        PACKAGES="$COMMON_PACKAGES $ARCH_PACKAGES"
-        ;;
-    "arch"|"manjaro"|"endeavouros")
-        PACKAGES="$COMMON_PACKAGES jq iptables ipcalc"
-        ;;
-    "alpine")
-        PACKAGES="$COMMON_PACKAGES jq iptables"
-        ;;
-    *)
-        # Fallback based on ID_LIKE
-        if [[ "$OS_LIKE" == *"debian"* ]]; then
-            PACKAGES="$COMMON_PACKAGES $ARCH_PACKAGES"
-            PKG_MANAGER="apt"
-        elif [[ "$OS_LIKE" == *"rhel"* ]] || [[ "$OS_LIKE" == *"fedora"* ]]; then
-            PACKAGES="$COMMON_PACKAGES $ARCH_PACKAGES"
-        else
-            echo "Warning: Unsupported OS detected. Attempting with detected package manager..."
-            PACKAGES="$COMMON_PACKAGES $ARCH_PACKAGES"
-        fi
-        ;;
-esac
+# Install packages with enhanced error handling
+install_packages_enhanced "$PKG_MANAGER" "$OS_ID" "$OS_VERSION"
 
-if install_packages "$PKG_MANAGER" "$PACKAGES"; then
-    echo "Dependencies installed successfully!"
+# Verify critical packages
+echo ""
+echo "Verifying critical packages..."
+CRITICAL_PACKAGES="gcc make git curl"
+MISSING_PACKAGES=""
+
+for pkg in $CRITICAL_PACKAGES; do
+    if ! command -v "$pkg" > /dev/null 2>&1; then
+        MISSING_PACKAGES="$MISSING_PACKAGES $pkg"
+    fi
+done
+
+if [ -n "$MISSING_PACKAGES" ]; then
+    echo "⚠ Warning: Critical packages missing:$MISSING_PACKAGES"
+    echo "Please install them manually before proceeding."
 else
-    echo "Failed to install dependencies. Please install manually:"
-    echo "$COMMON_PACKAGES $ARCH_PACKAGES"
-    exit 1
+    echo "✓ All critical packages are available!"
 fi
+
 
 
 # --- Configuration ---
