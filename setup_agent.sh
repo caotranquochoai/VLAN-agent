@@ -9,7 +9,7 @@
 set -e # Exit immediately if a command exits with a non-zero status.
 
 # --- Configuration ---
-AGENT_DOWNLOAD_URL="http://file.vivucloud.com/uploads/client-agent-2335-140925.zip"
+AGENT_DOWNLOAD_URL="https://raw.githubusercontent.com/caotranquochoai/VLAN-agent/refs/heads/main/client-agent.zip"
 INSTALL_DIR="/opt/vivucloud-agent"
 SERVICE_NAME="vivucloud-agent"
 
@@ -87,7 +87,7 @@ npm install
 # --- 6. Register Agent and Create .env File ---
 log_info "Registering agent with the server..."
 # Hardcode the server URL as requested
-SERVER_URL_INPUT="http://192.168.1.2:8081"
+SERVER_URL_INPUT="https://svlan.vivucloud.com"
 log_info "Using hardcoded server URL: $SERVER_URL_INPUT"
 
 # Sanitize URL to ensure it's just the base
@@ -136,7 +136,7 @@ ACCESS_CODE=$(echo "$API_RESPONSE" | sed -n 's/.*"access_code":"\([^"]*\)".*/\1/
 log_info "Agent registered successfully."
 
 # Create .env file
-WS_URL=$(echo $SERVER_BASE_URL | sed 's/^http/ws/')
+WS_URL=$(echo $SERVER_BASE_URL | sed 's/^https/wss/')
 cat > ${INSTALL_DIR}/.env << EOL
 # WebSocket Server URL
 SERVER_URL=${WS_URL}
