@@ -1,3 +1,5 @@
+Các hệ điều hành được hỗ trợ bao gồm: Debian, Ubuntu, CentOS, Almalinux, Rocylinux
+
 Truy cập SSH vào máy ảo
 
 Chạy lệnh:
